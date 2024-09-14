@@ -32,10 +32,10 @@ __global__ void sgemm_V1(
     float * __restrict__ a, float * __restrict__ b, float * __restrict__ c,
     const int M, const int N, const int K) {
 
-    const int BM = 128;
-    const int BN = 128;
-    const int BK = 8;
-    const int TM = 8;
+    const int BM = 128; // M维度的切分
+    const int BN = 128; // N维度的切分
+    const int BK = 8; // K维度的切分
+    const int TM = 8; 
     const int TN = 8;
 
     const int bx = blockIdx.x;
@@ -44,8 +44,8 @@ __global__ void sgemm_V1(
     const int ty = threadIdx.y;
     const int tid = ty * blockDim.x + tx;
 
-    __shared__ float s_a[BM][BK];
-    __shared__ float s_b[BK][BN];
+    __shared__ float s_a[BM][BK]; // 申请 share memory 显存（同一个block内部的线程共享同一块儿 share memory）
+    __shared__ float s_b[BK][BN]; // 申请 share memory 显存
 
     float r_c[TM][TN] = {0.0};
 
@@ -65,10 +65,10 @@ __global__ void sgemm_V1(
         int load_b_gmem_addr = OFFSET(load_b_gmem_k, load_b_gmem_n, N);
         FLOAT4(s_b[load_b_smem_k][load_b_smem_n]) = FLOAT4(b[load_b_gmem_addr]);
 
-        __syncthreads();
+        __syncthreads(); // 每个线程load自己的数据，存到share memory中, 因此这里需要做线程同步，只有保证各个线程都读取了自己的数据，存到了share memeory, 才能做后续的计算
 
         #pragma unroll
-        for (int k = 0; k < BK; k++) {
+        for (int k = 0; k < BK; k++) { // 每个线程处理 BK个元素
             #pragma unroll
             for (int m = 0; m < TM; m++) {
                 #pragma unroll
@@ -83,7 +83,7 @@ __global__ void sgemm_V1(
         __syncthreads();
     }
 
-    #pragma unroll
+    #pragma unroll // 这是个循环展开的宏用法，具体可以google查，这里的作用主要是在编译的过程中，直接将for循环展开，虽然展开后代码阅读性不好，但是整体执行过程中可能会更方便并行之类的的
     for (int i = 0; i < TM; i++) {
         int store_c_gmem_m = by * BM + ty * TM + i;
         #pragma unroll
@@ -117,8 +117,8 @@ int main(void) {
     for (int i = 0; i < TESTNUM; i++) {
         const int M = M_list[i], N = N_list[i], K = K_list[i];
 
-        dim3 blockDim(BN / TN, BM / TM);
-        dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+        dim3 blockDim(BN / TN, BM / TM); // 每个大小为 BM*BN的block块儿 再次 切分为大小为 TM*TN 的更小的块儿，这种更小的块儿中包含TM*TN个元素， 每个线程处理这些个小块儿，也就是说，每个线程处理TM*TN个元素
+        dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);  // 将矩阵C分解成为 大小为 BM * BN 的block分块儿
 
         double max_sec = 0.0;
         double min_sec = DBL_MAX;
@@ -224,5 +224,4 @@ float testPerformance(
 
     return sec;
 }
-
 
