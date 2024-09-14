@@ -9,7 +9,8 @@
 float testError(void);
 float testPerformance(
     void (*gpuSgemm) (float *, float *, float *, const int, const int, const int),
-    dim3 gridDim, dim3 blockDim, const int M, const int N, const int K, const int repeat);
+    dim3 gridDim, dim3 blockDim, const int M, const int N, const int K, const int repeat
+);
 
 void cpuSgemm(
     float *a, float *b, float *c, const int M, const int N, const int K) {
@@ -36,9 +37,9 @@ __global__ void naiveSgemm(
         float psum = 0.0;
         #pragma unroll
         for (int k = 0; k < K; k++) {
-            psum += a[OFFSET(m, k, K)] * b[OFFSET(k, n, N)];
+            psum += a[OFFSET(m, k, K)] * b[OFFSET(k, n, N)]; // 拿到a对应的元素，b对应的元素，说白了对应元素相乘 sum起来
         }
-        c[OFFSET(m, n, N)] = psum;
+        c[OFFSET(m, n, N)] = psum; // 将sum的结果赋值
     }
 }
 
@@ -53,20 +54,20 @@ int main(void) {
     
     const int outer_repeat = 10, inner_repeat = 1;
     const int BM = 32, BN = 32;
-    void (*gpuSgemm) (float *, float *, float *, const int, const int, const int) = naiveSgemm;
+    void (*gpuSgemm) (float *, float *, float *, const int, const int, const int) = naiveSgemm; // 函数指针
     const int TESTNUM = 15;
 
     for (int i = 0; i < TESTNUM; i++) {
         const int M = M_list[i], N = N_list[i], K = K_list[i];
 
-        dim3 blockDim(BN, BM);
-        dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+        dim3 blockDim(BN, BM); // 每个block, 32 * 32 个线程
+        dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM); // 这么多个block，一共 M*N个元素，每个元素在计算过程中都需要 k*k个向量对应元素相乘 sum起来
 
         double max_sec = 0.0;
         double min_sec = DBL_MAX;
         double total_sec = 0.0;
 
-        for (int j = 0; j < outer_repeat; j++) {
+        for (int j = 0; j < outer_repeat; j++) { // 重复多次
             double this_sec = testPerformance(gpuSgemm, gridDim, blockDim, M, N, K, inner_repeat);
             max_sec = max(max_sec, this_sec);
             min_sec = min(min_sec, this_sec);
@@ -92,7 +93,7 @@ float testError(void) {
     size_t size_b = K * N * sizeof(float);
     size_t size_c = M * N * sizeof(float);
 
-    float *h_a, *h_b, *h_c, *d_a, *d_b, *d_c, *h_d_c;
+    float *h_a, *h_b, *h_c, *d_a, *d_b, *d_c, *h_d_c; // h_a, h_b, h_c, 作cpu运算，  *d_a, *d_b, *d_c, 作cuda运算
     h_a = (float *)malloc(size_a);
     h_b = (float *)malloc(size_b);
     h_c = (float *)malloc(size_c);
@@ -103,14 +104,14 @@ float testError(void) {
 
     srand(time(0));
     for (int i = 0; i < M * K; i++)
-        h_a[i] = rand() / float(RAND_MAX);
+        h_a[i] = rand() / float(RAND_MAX); // 生成随机数字
     for (int i = 0; i < K * N; i++)
         h_b[i] = rand() / float(RAND_MAX);
     cudaMemset(d_c, 15, size_c);
 
     cpuSgemm(h_a, h_b, h_c, M, N, K);
 
-    cudaMemcpy(d_a, h_a, size_a, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a, h_a, size_a, cudaMemcpyHostToDevice); // 将h_a数据复制到d_a
     cudaMemcpy(d_b, h_b, size_b, cudaMemcpyHostToDevice);
     naiveSgemm<<<gridDim, blockDim>>>(d_a, d_b, d_c, M, N, K);
     cudaMemcpy(h_d_c, d_c, size_c, cudaMemcpyDeviceToHost);
@@ -144,8 +145,8 @@ float testPerformance(
     size_t size_b = K * N * sizeof(float);
     size_t size_c = M * N * sizeof(float);
 
-    float *d_a, *d_b, *d_c;
-    cudaMalloc(&d_a, size_a);
+    float *d_a, *d_b, *d_c; // 申请矩阵
+    cudaMalloc(&d_a, size_a); // 申请显存
     cudaMalloc(&d_b, size_b);
     cudaMalloc(&d_c, size_c);
 
@@ -162,11 +163,10 @@ float testPerformance(
     cudaEventElapsedTime(&msec, start, end);
     sec = msec / 1000.0 / repeat;
 
-    cudaFree(d_a);
+    cudaFree(d_a); // 释放显存
     cudaFree(d_b);
     cudaFree(d_c);
 
     return sec;
 }
-
 
